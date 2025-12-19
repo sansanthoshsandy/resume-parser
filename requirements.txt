@@ -1,8 +1,6 @@
 streamlit
-spacy
+spacy==3.7.2
 pandas
 pdfplumber
 python-docx
 openpyxl
-spacy
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.6.1/en_core_web_sm-3.6.1.tar.gz
