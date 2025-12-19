@@ -3,47 +3,56 @@
 # -----------------------------
 import streamlit as st
 import re
-import spacy
 import pandas as pd
 import pdfplumber
 from docx import Document
 import datetime
 import base64
-import subprocess
+
+# spaCy safe import (Cloud ready)
+import spacy
+from spacy.cli import download
 
 # -----------------------------
-# BACKGROUND IMAGE
+# LOAD SPACY MODEL (AUTO DOWNLOAD)
+# -----------------------------
+try:
+    nlp = spacy.load("en_core_web_sm")
+except:
+    download("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
+
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
+st.set_page_config(page_title="NLP Resume Parser", layout="centered")
+
+# -----------------------------
+# BACKGROUND IMAGE (LOCAL FILE)
 # -----------------------------
 def add_bg_from_local(image_path):
     with open(image_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode()
+
     st.markdown(
         f"""
         <style>
         .stApp {{
             background-image: url("data:image/png;base64,{encoded}");
-            background-size:cover;
+            background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
             background-attachment: fixed;
-            color: black;
         }}
         </style>
         """,
         unsafe_allow_html=True
     )
 
-# Add your image from the path
-add_bg_from_local(r"C:\Users\sansa\Desktop\day 3\resume-parser.png")
-
-# -----------------------------
-# LOAD SPACY MODEL WITH AUTO DOWNLOAD
-# -----------------------------
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-    nlp = spacy.load("en_core_web_sm")
+# ❗IMPORTANT:
+# On Streamlit Cloud, LOCAL PC PATH WILL NOT WORK
+# Use image inside project folder (example: "assets/bg.png")
+add_bg_from_local("resume-parser.png")
 
 # -----------------------------
 # EXTRACT TEXT FROM PDF
@@ -71,15 +80,14 @@ def extract_text_docx(file):
 # EXTRACT EMAIL
 # -----------------------------
 def extract_email(text):
-    text = text.replace("(at)", "@").replace("[at]", "@").replace(" at ", "@")
-    text = text.replace("(dot)", ".").replace("[dot]", ".").replace(" dot ", ".")
-    text = text.replace(" ", "")
+    text = text.replace("(at)", "@").replace(" at ", "@")
+    text = text.replace("(dot)", ".").replace(" dot ", ".")
     pattern = r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
     emails = re.findall(pattern, text)
     return emails[0] if emails else "Not Found"
 
 # -----------------------------
-# EXTRACT PHONE
+# EXTRACT PHONE NUMBER
 # -----------------------------
 def extract_phone(text):
     phones = re.findall(r"\b\d{10}\b", text)
@@ -90,17 +98,19 @@ def extract_phone(text):
 # -----------------------------
 def extract_name(text):
     lines = text.split("\n")
+
+    # First 5 lines heuristic
     for line in lines[:5]:
         line = line.strip()
         if 2 <= len(line.split()) <= 4:
-            if not any(word in line.lower() for word in ["tamil", "nadu", "india", "chennai"]):
-                return line
-    # fallback using spaCy
+            return line
+
+    # spaCy fallback
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ == "PERSON":
-            if not any(word in ent.text.lower() for word in ["tamil", "nadu", "india"]):
-                return ent.text
+            return ent.text
+
     return "Not Found"
 
 # -----------------------------
@@ -112,74 +122,70 @@ def extract_skills(text):
         "deep learning", "power bi", "tableau",
         "data analysis", "c++", "java"
     ]
+
     text = text.lower()
-    found_skills = [skill for skill in skills_list if skill in text]
-    return list(set(found_skills))
+    found = [skill for skill in skills_list if skill in text]
+    return list(set(found))
 
 # -----------------------------
 # STREAMLIT UI
 # -----------------------------
-st.set_page_config(page_title="NLP Resume Parser", layout="centered")
-st.title("📄 NLP Resume Parser with Background")
-st.write("Upload your Resume (PDF or DOCX)")
+st.title("📄 NLP Resume Parser")
+st.write("Upload your resume (PDF or DOCX)")
 
 uploaded_file = st.file_uploader("Choose Resume File", type=["pdf", "docx"])
 
 # -----------------------------
-# MAIN PROCESS
+# MAIN LOGIC
 # -----------------------------
-if uploaded_file is not None:
+if uploaded_file:
 
-    # Read resume
     if uploaded_file.type == "application/pdf":
         resume_text = extract_text_pdf(uploaded_file)
     else:
         resume_text = extract_text_docx(uploaded_file)
 
-    # Extract information
     name = extract_name(resume_text)
     email = extract_email(resume_text)
     phone = extract_phone(resume_text)
     skills = extract_skills(resume_text)
 
-    # Personal link
     personal_link = "https://www.linkedin.com/in/your-profile"
 
-    # Display output in a semi-transparent box
+    # Display Output
     st.markdown(
         f"""
-        <div style="background-color: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px;">
+        <div style="background-color: rgba(255,255,255,0.85);
+                    padding: 20px; border-radius: 10px;">
         <h4>✅ Extracted Information</h4>
         <p><b>Name:</b> {name}</p>
         <p><b>Email:</b> {email}</p>
         <p><b>Phone:</b> {phone}</p>
         <p><b>Skills:</b> {', '.join(skills)}</p>
-        <p><b>Profile Link:</b> <a href="{personal_link}" target="_blank">{personal_link}</a></p>
+        <p><b>Profile:</b> <a href="{personal_link}" target="_blank">{personal_link}</a></p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
     # Save to Excel
-    data = {
-        "Name": [name],
-        "Email": [email],
-        "Phone": [phone],
-        "Skills": [", ".join(skills)],
-        "Profile Link": [personal_link]
-    }
+    df = pd.DataFrame([{
+        "Name": name,
+        "Email": email,
+        "Phone": phone,
+        "Skills": ", ".join(skills),
+        "Profile Link": personal_link
+    }])
 
-    df = pd.DataFrame(data)
     filename = f"resume_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df.to_excel(filename, index=False)
 
-    st.success(f"📁 Excel file created automatically: {filename}")
+    st.success("📁 Excel file generated successfully")
 
-    # Download button
-    with open(filename, "rb") as file:
+    with open(filename, "rb") as f:
         st.download_button(
-            label="📥 Download Excel File",
-            data=file,
+            "📥 Download Excel",
+            data=f,
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
