@@ -9,6 +9,7 @@ import pdfplumber
 from docx import Document
 import datetime
 import base64
+import subprocess
 
 # -----------------------------
 # BACKGROUND IMAGE
@@ -36,12 +37,16 @@ def add_bg_from_local(image_path):
 add_bg_from_local(r"C:\Users\sansa\Desktop\day 3\resume-parser.png")
 
 # -----------------------------
-# LOAD SPACY MODEL
+# LOAD SPACY MODEL WITH AUTO DOWNLOAD
 # -----------------------------
-nlp = spacy.load("en_core_web_sm")
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
 
 # -----------------------------
-# EXTRACT TEXT FROM PDF USING PDFPLUMBER
+# EXTRACT TEXT FROM PDF
 # -----------------------------
 def extract_text_pdf(file):
     text = ""
@@ -66,17 +71,15 @@ def extract_text_docx(file):
 # EXTRACT EMAIL
 # -----------------------------
 def extract_email(text):
-    # Normalize obfuscations
     text = text.replace("(at)", "@").replace("[at]", "@").replace(" at ", "@")
     text = text.replace("(dot)", ".").replace("[dot]", ".").replace(" dot ", ".")
     text = text.replace(" ", "")
-
     pattern = r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
     emails = re.findall(pattern, text)
     return emails[0] if emails else "Not Found"
 
 # -----------------------------
-# EXTRACT PHONE NUMBER
+# EXTRACT PHONE
 # -----------------------------
 def extract_phone(text):
     phones = re.findall(r"\b\d{10}\b", text)
@@ -87,13 +90,12 @@ def extract_phone(text):
 # -----------------------------
 def extract_name(text):
     lines = text.split("\n")
-    # First 5 lines heuristic
     for line in lines[:5]:
         line = line.strip()
         if 2 <= len(line.split()) <= 4:
             if not any(word in line.lower() for word in ["tamil", "nadu", "india", "chennai"]):
                 return line
-    # Fallback to spaCy
+    # fallback using spaCy
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ == "PERSON":
@@ -110,14 +112,8 @@ def extract_skills(text):
         "deep learning", "power bi", "tableau",
         "data analysis", "c++", "java"
     ]
-
     text = text.lower()
-    found_skills = []
-
-    for skill in skills_list:
-        if skill in text:
-            found_skills.append(skill)
-
+    found_skills = [skill for skill in skills_list if skill in text]
     return list(set(found_skills))
 
 # -----------------------------
